@@ -49,7 +49,7 @@ plt.rcParams.update(params)
 from matplotlib import font_manager
 
 # Insert where the fonts are stored here!
-font_dir = [r'C:\Users\LeonK\AppData\Local\Microsoft\Windows']
+font_dir = [r'INSERT_FONT_LOCATIONS']
 for font in font_manager.findSystemFonts(font_dir):
     try:
         font_manager.fontManager.addfont(font)
@@ -59,6 +59,10 @@ for font in font_manager.findSystemFonts(font_dir):
 plt.rcParams["font.family"] = "Linux Libertine Display O"
 plt.clf()
 
+
+#==============================================================================
+# THE SETTLEMENT CLASS
+#==============================================================================
 
 # The settlement class contains the information of a settlement and a list of all its
 # people (see class below). It also contains some functions to return information of the
@@ -111,32 +115,15 @@ class Settlement:
         except KeyError:
             return countyDictionary[county.strip()]
     
-    def AverageAssessment(self):
-        return np.average([person.assessment for person in self.people])
-    
-    def AssessmentsMarried(self, filterAssessment = 0):
-        tempAssessments =  np.array([person.assessment for person in self.people
-                         if person.married == True])
-        if filterAssessment == 0:
-            return tempAssessments
-        else:
-            return tempAssessments[tempAssessments<filterAssessment]
-    
-    # Gender should be M, F or U
-    def AssessmentsUnmarried(self, gender, filterAssessment = 0):
-        tempAssessments = np.array([person.assessment for person in self.people
-                                    if (person.married == False and person.gender == gender)])
-        if filterAssessment == 0:
-            return tempAssessments
-        else:
-            return tempAssessments[tempAssessments<filterAssessment]
-    
 
+#==============================================================================
+# THE PERSON CLASS
+#==============================================================================
 
 # The person class, this contains all the possible info of a person (at least, for the poll tax)
 class Person:
     id = 0
-    def __init__(self, firstName, lastName, assessment, gender, work, married, village, hundred, ward, county, employer, employee, servRightLoc):
+    def __init__(self, firstName, lastName, assessment, gender, work, married, village, hundred, ward, county, employer, employee, servRightLoc, assessmentBeforeDistribution):
         self.firstName = firstName
         self.lastName = lastName
         self.assessment = assessment
@@ -153,6 +140,11 @@ class Person:
         self.employer = employer
         self.employee = employee
         self.servRightLoc = servRightLoc
+        self.assessmentBeforeDistribution = assessmentBeforeDistribution
+   
+#==============================================================================
+# OTHER FUNCTIONS
+#============================================================================== 
    
 # Calculate the gini of a person
 def Gini(x):
@@ -169,10 +161,6 @@ def Theil(x, total):
     x = x[x!=0]
     return np.sum(x/mean*np.log(x/mean))/length
 
-def share_biggest(x):
-    xNew = np.histogram(x*12,bins=np.arange(2,249, step = 2))[0]
-    p_x = xNew/np.sum(xNew)
-    return max(p_x)
 
 def MaxPossibleEntropy(x):
     if x < 46:
@@ -212,14 +200,13 @@ def SectorFromWork(work):
                       "fabr":"Artisan","ten'":"Agriculture","mole":"Artisan","fran":"Agriculture"}
     
     # If someone is a wife or a servant, look here (we need to delete the last two characters)
-    if work[:1] == "s'":
+    if work[:2] == "s'":
         return "Servant"
     if work[-2:] == "_M" or work[-2:] == "_S":
         try:
             tempSector = dictSectors[work[:-2].strip().lower()]
         except:
             tempSector = "Not identified"
-            notknown.append(work[:-2])
         if tempSector == "":
             tempSector = "Not identified"
         if work[-2:] == "_M":
@@ -231,7 +218,6 @@ def SectorFromWork(work):
         tempSector = dictSectors[work.strip().lower()]
     except:
         tempSector = "Not identified"
-        notknown.append(work)
     if tempSector == "":
         tempSector = "Not identified"
 
@@ -281,26 +267,6 @@ def GenderFromName(name,x):
         tempGender = x[12]
     return tempGender
 
-# These settlements have no scaling and should be ignored
-def VillageNoScaling(name):
-    list_thing = ['Little Soudley','Moston','Kingston Deverill','Stanton upon Hine Heath',
-     'Timberth','Frome Biller','Frampton Mansell','Stockton','Kenstone','Osbaston',
-     'Woodcote','Kintbury','Adney','Howle','Keythorpe','Newbold','Avington','Hopton and Espley',
-     'Chickerell','Brocksby','Bromlow','Great Stretton','Hamstead Marshall','Kingston Maurward',
-     'Stean Bridge and Bisley [pcl]','Stinsford','Priestweston','Binweston','Ingarsby',
-     'Little Yeldham','Tipton','Wotherton','Upwey','Pusey','Wrickton and Walkerslow',
-     'Billingsley','Wollaston with parcels','Great Saling','Dodlington','Lyford',
-     'Rolleston','Frome Whitfield','[Winnington with parcels]','Pulston with Forston',
-     "King's Norton",'Middleton','Shangton','Westley','Great Saxham','Meysey Hampton',
-     'Edgmond','Hargrave','(Liston)','Charney Bassett','Goodby Marwood','Lamarsh',
-     'Frilford','Donnington','Grafton','Wistow','Burrough on the Hill','Marsh Benham',
-     'Ashton under Hill','Broadmayne','Hinton on the Green','Galy','Pebmarsh','Stow Bardolph with Wimbotsham',
-     'Beckford',"Salisbury","Shrewsbury", "Kessingland"]
-        #Salisbury and Shrewsbury do have scaling, but they are much too fragmented to be used, so I just put them here.
-    if name in list_thing:
-        return True
-    return False
-
 # This reconstructs the missing assessments from 1381
 def ReconstructLostAssessments(settlement):
 
@@ -318,11 +284,14 @@ def ReconstructLostAssessments(settlement):
         return newAssessments
     else:
         return [person.assessment for person in settlement.people]
+    
+#==============================================================================
+# THE FUNCTION THAT INITIALISES THE PERSON CLASS
+#==============================================================================
 
 # Here, all the people are created
 def CreatePerson(x):
     listPeople = []
-    actual_assessments = []
     previousUnreadable = False
     
     # Loop over the full data
@@ -361,6 +330,9 @@ def CreatePerson(x):
             assessment = float(shillings) + float(pence)/12
         except:
             continue
+        
+        assessmentBeforeDistribution = assessment
+        
         name = temparray[9]
         lastname = temparray[10]
         gender = GenderFromName(name, temparray)
@@ -414,11 +386,6 @@ def CreatePerson(x):
                 if assessment == 0:
                     listPeople[-1].assessment = listPeople[-1].assessment/2
                     assessment = listPeople[-1].assessment
-                    # actual_assessments[-1] = actual_assessments[-1]/2
-                    # actual_assessments.append(actual_assessments[-1])
-                else:
-                    percentage_assessment_wife.append(listPeople[-1].assessment/assessment)
-                    percentage_assessment_wife_villages.append(village)
                 if work == "":
                     # If she has no explicit occupation, use that of her husband
                     work = str(listPeople[-1].work.strip()) + "_M"
@@ -510,17 +477,15 @@ def CreatePerson(x):
              continue
 
         # create the person and append it to the list
-        listPeople.append(Person(name, lastname, assessment, gender, work, married, village, hundred, ward,county,employer,employee,servRightLoc))
+        listPeople.append(Person(name, lastname, assessment, gender, work, married, village, hundred, ward,county,employer,employee,servRightLoc, assessmentBeforeDistribution))
         previousUnreadable = False
         
-        # The actual_assessments stores the unscaled assessments and is used for 
-        # the analysis of the assessments as directly assigned (i.e. without halving
-        # the assessments for married couples)
-        actual_assessments.append(float(shillings) + float(pence)/12)
-        
-    return listPeople, actual_assessments
+    return listPeople
  
-    
+#==============================================================================
+# THE FUNCTIONS THAT RESCALE SETTLEMENTS
+#==============================================================================
+
 # Rescale York:
 def RescaleYork(ward, assessment):
     if ward == "St Crux (Pavement)":
@@ -585,7 +550,10 @@ def RescaleOxford(ward, assessment):
         return assessment/10*7.4
     else:
         return 0
-    
+
+#==============================================================================
+# THE FILTER OF SETTLEMENTS
+#==============================================================================
     
 def FilterSettlements(listPeople, UniqueCountySettlementList):
     
@@ -699,6 +667,10 @@ def FilterSettlements(listPeople, UniqueCountySettlementList):
         
     return filteredSettlementList, allPeopleAfterFilterArr, rejectedGiniEntropyArray
 
+#==============================================================================
+# IMPORTING AND CONSTRUCTING THE INITITAL DATASET
+#==============================================================================
+
 # Here, set the location to be the files we wish to import!
 fileloc1 = r"C:\Users\LeonK\Documents\Studie\MA Renaissance\Thesis\poll_tax_1381\campop_1.csv"
 fileloc2 = r"C:\Users\LeonK\Documents\Studie\MA Renaissance\Thesis\poll_tax_1381\campop_2.csv"
@@ -731,22 +703,18 @@ for i in range(len(file_size_vills)-2):
     array_size_vills = np.vstack((array_size_vills,temparray))
 array_size_vills=array_size_vills[1:]
 
-emptyarray = np.zeros(len(file1[0].split(';')))
-
 # bigfile is every file combined
 bigfile = np.append(file1,file2)
 bigfile = np.append(bigfile,file3)
 bigfile = np.append(bigfile,file4)
 
-# bigfile = file4
-
-percentage_assessment_wife = []
-percentage_assessment_wife_villages = []
-
 print("I still need to put the 'right placement' for all servants in big settlements not in my addendum...")
 # Here, we create all the people
-listPeople, actual_assessments = CreatePerson(bigfile)
-actual_assessments2 = []
+listPeople = CreatePerson(bigfile)
+
+#==============================================================================
+# PERFORMING THE FIRST FILTER
+#==============================================================================
 
 CountySettlementList = []
 
@@ -773,16 +741,12 @@ giniEntropyList = []
 filteredSettlementList, allPeopleAfterFilterArr, rejectedGiniEntropyArray = FilterSettlements(
     listPeople, UniqueCountySettlementList)
 
-percentage_assessment_wife_new = []
-for i in range(len(percentage_assessment_wife)):
-    if percentage_assessment_wife_villages[i] in filteredSettlementList:
-        percentage_assessment_wife_new.append(percentage_assessment_wife[i])
-
-plt.hist(percentage_assessment_wife_new, bins = [0,0.99,1.01,2,20])
-plt.show()
 
 
-# THE NORMALISATION OF THE FIRST PLOT IS NOW HARD-CODED IN, THIS SHOULD BE IMPROVED
+#==============================================================================
+# THE PLOT WITH THE SHANNON ENTROPY AND MODIFIED GINI ENTROPY
+#==============================================================================
+
 fig = plt.figure(figsize = (10,4))
 
 gs = fig.add_gridspec(1,3, wspace=0, width_ratios = [8/26,10/26,8/26])
@@ -833,10 +797,13 @@ for ax in listie:
 plt.savefig('GiniVsEentropy.pdf', bbox_inches = "tight")
 plt.show()
 
+#==============================================================================
+# THE PLOT OF ALL ASSESSMENTS THAT SURVIVE THE FILTERS WITHOUT DISTRIBUTION
+#==============================================================================
 
-assessmentsAfterFilter = np.array([people.assessment for people in allPeopleAfterFilterArr])
+assessmentsBeforeDistribution = np.array([person.assessmentBeforeDistribution for person in allPeopleAfterFilterArr if person.assessmentBeforeDistribution != 0])
 
-totalDenarii = np.round(assessmentsAfterFilter*12)
+totalDenarii = np.round(assessmentsBeforeDistribution*12)
     
 plt.rc('axes', axisbelow=True)
 plt.rcParams.update({'font.size': 16})
@@ -854,6 +821,10 @@ plt.tight_layout()
 plt.savefig("totaldistrshillings.pdf")
 plt.show()
 
+#==============================================================================
+# THE DISTRIBUTION OF ALL ASSESSMENTS AND GENDERS IN THE DATA
+#==============================================================================
+
 assessments = Counter(totalDenarii).keys()
 waardes = Counter(totalDenarii).values()
 waardes, assessments = zip(*sorted(zip(waardes,assessments)))
@@ -869,6 +840,11 @@ uniqueGendersValues, uniqueGenders = zip(*sorted(zip(uniqueGendersValues,uniqueG
 
 print(uniqueGenders)
 print(uniqueGendersValues)
+
+
+#==============================================================================
+# THE LISTS AND ARRAYS THAT WE WILL FILL DURING THE SECOND LOOP OF SETTLEMENTS
+#==============================================================================
 
 orderOfInhabitants = []
 # Determine the correct order for the largest cities, such that they are in order of inhabitants for the plots:
@@ -910,9 +886,11 @@ totalListMarriedRural = []
 totalListUnmarriedMenRural = []
 totalListUnmarriedWomenRural = []
 
-numberInhabitants_10 = 0
-numberInhabitants_175 = 0
-numberInhabitants_25 = 0
+totalListMarriedRuralFiltered = []
+totalListUnmarriedMenRuralFiltered = []
+totalListUnmarriedWomenRuralFiltered = []
+
+settlementsEmployerEmployee = []
 
 weightArray = np.array([])
 weightArrayOnePercent = np.array([])
@@ -924,6 +902,9 @@ wealthNeitherEmployerEmployeeArray = np.array([])
 wealthFemaleEmployeesArray = np.array([])
 wealthMaleEmployeesArray = np.array([])
 
+wealthFemaleEmployeesRuralArray = np.array([])
+wealthMaleEmployeesRuralArray = np.array([])
+
 # underhundred_reconstructed_total = 0
 
 # # This the logarithmic binning that will be used in our plots
@@ -932,16 +913,15 @@ logbins2 = np.linspace(np.log10(50),np.log10(10000),num = 300)
 logbins = np.append(np.log10(logbins1),logbins2[1:])-0.01
 middle_bins = logbins[:-1] + (logbins[:-1]-logbins[1:])/2
 
-shannon_entropy = []
+#==============================================================================
+# THE SECOND LOOP WHICH PROCESSES ALL SETTLEMENTS AND PERFORMS THE SIMULATIONS
+#==============================================================================
 
 # We loop over every settlement. The tqdm allows for a progress bar to show up
 for settlement in tqdm(reorderedSettlementList):
     
     # An array of the assessments in the settlement
     assessmentsWorkingSet = np.array([person.assessment for person in settlement.people])
-
-    # villages3 contains the names of all the settlements we actually use and aren't skipped for some reason
-    shannon_entropy.append(NormalisedShannonEntropy(assessmentsWorkingSet))
 
 
     if settlement in reorderedSettlementList[-number_of_xticks:]:
@@ -959,6 +939,8 @@ for settlement in tqdm(reorderedSettlementList):
             wealthEmployeesArray = np.append(wealthEmployeesArray, wealthEmployees)
             wealthNeitherEmployerEmployeeArray = np.append(wealthNeitherEmployerEmployeeArray, wealthNeitherEmployerEmployee)
 
+            settlementsEmployerEmployee.append(settlement)
+            
         femaleEmployeesInSettlement = sum(np.array([person.employee for person in settlement.people if person.gender[-1] == "F"]))
         maleEmployeesInSettlement = sum(np.array([person.employee for person in settlement.people if person.gender[-1] == "M"]))
 
@@ -987,7 +969,6 @@ for settlement in tqdm(reorderedSettlementList):
         averageListUnmarriedMenFiltered.append(np.average([person.assessment for person in settlement.people if (person.gender == "M" or person.gender == "Child M") and person.assessment < 2.01]))
         averageListMarriedFiltered.append(np.average([person.assessment for person in settlement.people if (person.gender == "Married F" or person.gender == "Married M") and person.assessment < 2.01]))
     
-    assessmentsWorkingSet = np.array([person.assessment for person in settlement.people])
     # Calculate the number of inhabitants in 1377 using different facors of 10, 17.5 and 25 percent
     inhabitants1377_25 = int(settlement.totalAssessments1381/(1-settlement.decreaseFactor/100)/(1-0.25))
     inhabitants1377_10 = int(settlement.totalAssessments1381/(1-settlement.decreaseFactor/100)/(1-0.1))
@@ -999,22 +980,24 @@ for settlement in tqdm(reorderedSettlementList):
         totalListUnmarriedWomenRural += [person.assessment for person in settlement.people if (person.gender == "F" or person.gender == "Child F")]
         totalListUnmarriedMenRural += [person.assessment for person in settlement.people if (person.gender == "M" or person.gender == "Child M")]
         totalListMarriedRural += [person.assessment for person in settlement.people if (person.gender == "Married M" or person.gender == "Married F")]
+        
+        totalListUnmarriedWomenRuralFiltered += [person.assessment for person in settlement.people if (person.gender == "F" or person.gender == "Child F") and person.assessment < 2.01]
+        totalListUnmarriedMenRuralFiltered += [person.assessment for person in settlement.people if (person.gender == "M" or person.gender == "Child M") and person.assessment < 2.01]
+        totalListMarriedRuralFiltered += [person.assessment for person in settlement.people if (person.gender == "Married M" or person.gender == "Married F") and person.assessment < 2.01]
 
+        femaleEmployeesInSettlement = sum(np.array([person.employee for person in settlement.people if person.gender[-1] == "F"]))
+        maleEmployeesInSettlement = sum(np.array([person.employee for person in settlement.people if person.gender[-1] == "M"]))
 
-    # This keeps track of the total number of settlements and the average number of inhabitants therein
-    numberInhabitants_175 += inhabitants1377_17dot5
-    numberInhabitants_10 += inhabitants1377_10
-    numberInhabitants_25 += inhabitants1377_25
-    
+        if femaleEmployeesInSettlement > 2 and maleEmployeesInSettlement > 2:
+            
+            wealthFemaleEmployeesRuralArray = np.append(wealthFemaleEmployeesRuralArray, [person.assessment for person in settlement.people if (person.employee == True and person.gender[-1] == "F")])
+            wealthMaleEmployeesRuralArray = np.append(wealthMaleEmployeesRuralArray, [person.assessment for person in settlement.people if (person.employee == True and person.gender[-1] == "M")])
 
     # Take the data points that are within the range of inhabitants
     binsForCalculation = np.round(10**middle_bins).astype(int)
     binsForCalculation = np.ma.compressed(np.ma.masked_where(binsForCalculation < inhabitants1377_10,binsForCalculation))
     binsForCalculation = np.ma.compressed(np.ma.masked_where(binsForCalculation > inhabitants1377_25,binsForCalculation))
-    
-    two_sigma = (inhabitants1377_25 - inhabitants1377_10)/2
-    middle = inhabitants1377_10 + two_sigma
-        
+            
     # In this for loop, we calculate the Gini and Theil factors, and wealth shares, for the range of possible inhabitants 
     
     # Because everything is calculated for every bin of calculation, we divide over the
@@ -1029,7 +1012,6 @@ for settlement in tqdm(reorderedSettlementList):
     topfiftypercent_temp = []
     n_list_percent_temp = []
     n_list_tenpercent_temp = []
-    temp_share6pence = []
     
     # print("B: " + str(assessmentsWorkingSet))
     for _ in range(int(number_of_loops/len(binsForCalculation))):
@@ -1081,35 +1063,50 @@ for settlement in tqdm(reorderedSettlementList):
 
 print("Done! Let's start plotting")
 
-# THE NORMALISATION OF THE FIRST PLOT IS NOW HARD-CODED IN, THIS SHOULD BE IMPROVED
-fig = plt.figure(figsize = (10,12.66))
+#==============================================================================
+# THE LARGE PLOT OF AVERAGE WEALTH BETWEEN MEN, WOMEN AND MARRIED PEOPLE 
+#==============================================================================
 
-gs = fig.add_gridspec(4,1, wspace=0)
+fig = plt.figure(figsize = (10,10))
+
+gs = fig.add_gridspec(3,1, wspace=0)
 ax1 = fig.add_subplot(gs[0, 0])
 ax2 = fig.add_subplot(gs[1, 0])
 ax3 = fig.add_subplot(gs[2, 0])
-ax4 = fig.add_subplot(gs[3, 0])
-
-listie = [ax1, ax2, ax3]
 
 plt.rc('axes', axisbelow=True)
 plt.rcParams.update({'font.size': 16})
 
-counter = 0
-indEmpl = 0
+counter = -1
 indGenderEmpl = 0
 
-number_of_xticks += 1
-
-
-for settlement in reorderedSettlementList[-number_of_xticks:]:
+for settlement in reorderedSettlementList[-(number_of_xticks + 1):]:
     
-    if counter == 0:
+    if counter == -1:
         
         handle1 = ax1.scatter(counter,np.mean(totalListMarriedRural), color = 'r', label = "Married", s = 50)
         handle2 = ax1.scatter(counter,np.mean(totalListUnmarriedMenRural), color = 'b', marker = '^', label = "Unm. man", s = 50)
         handle3 = ax1.scatter(counter,np.mean(totalListUnmarriedWomenRural), color = 'g', marker = 'v', label = "Unm. woman", s = 50)
     
+        minimum = min(np.mean(totalListMarriedRural),min(np.mean(totalListUnmarriedMenRural), np.mean(totalListUnmarriedWomenRural)))
+        maximum = max(np.mean(totalListMarriedRural),max(np.mean(totalListUnmarriedMenRural), np.mean(totalListUnmarriedWomenRural)))
+        ax1.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
+    
+        handle4 = ax2.scatter(counter,np.mean(totalListMarriedRuralFiltered), color = 'r', label = "Married", s = 50)
+        handle5 = ax2.scatter(counter,np.mean(totalListUnmarriedMenRuralFiltered), color = 'b', marker = '^', label = "Unm. man", s = 50)
+        handle6 = ax2.scatter(counter,np.mean(totalListUnmarriedWomenRuralFiltered), color = 'g', marker = 'v', label = "Unm. woman", s = 50)
+    
+        minimum = min(np.mean(totalListMarriedRuralFiltered),min(np.mean(totalListUnmarriedMenRuralFiltered), np.mean(totalListUnmarriedWomenRuralFiltered)))
+        maximum = max(np.mean(totalListMarriedRuralFiltered),max(np.mean(totalListUnmarriedMenRuralFiltered), np.mean(totalListUnmarriedWomenRuralFiltered)))
+        ax2.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
+    
+        handle7 = ax3.scatter(counter, np.mean(wealthMaleEmployeesRuralArray), color = 'b', marker = '^', label = "Unm. man", s = 50)
+        handle8 = ax3.scatter(counter, np.mean(wealthFemaleEmployeesRuralArray), color = 'g', marker = 'v', label = "Unm. woman", s = 50)
+        
+        minimum = min(np.mean(wealthMaleEmployeesRuralArray), np.mean(wealthFemaleEmployeesRuralArray))
+        maximum = max(np.mean(wealthMaleEmployeesRuralArray), np.mean(wealthFemaleEmployeesRuralArray))
+        ax3.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
+        
     else:
         
         ind = -number_of_xticks + counter
@@ -1130,20 +1127,6 @@ for settlement in reorderedSettlementList[-number_of_xticks:]:
         minimum = min(averageListMarriedFiltered[ind],min(averageListUnmarriedMenFiltered[ind], averageListUnmarriedWomenFiltered[ind]))
         maximum = max(averageListMarriedFiltered[ind],max(averageListUnmarriedMenFiltered[ind], averageListUnmarriedWomenFiltered[ind]))
         ax2.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
-        
-    
-        employersInSettlement = sum(np.array([person.employer for person in settlement.people]))
-        employeesInSettlement = sum(np.array([person.employee for person in settlement.people]))
-        
-        if employersInSettlement > 4 and employeesInSettlement > 4:
-             handle7 = ax3.scatter(counter, wealthEmployersArray[indEmpl], color = 'r', label = "Employer", s = 50)
-             handle8 = ax3.scatter(counter, wealthEmployeesArray[indEmpl], color = 'g', marker = 'v', label = "Employee", s = 50)
-             handle9 = ax3.scatter(counter, wealthNeitherEmployerEmployeeArray[indEmpl], color = 'b', marker = '^', label = "Neither", s = 50)
-         
-             minimum = min(wealthEmployersArray[indEmpl],min(wealthEmployeesArray[indEmpl], wealthNeitherEmployerEmployeeArray[indEmpl]))
-             maximum = max(wealthEmployersArray[indEmpl],max(wealthEmployeesArray[indEmpl], wealthNeitherEmployerEmployeeArray[indEmpl]))
-             ax3.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
-             indEmpl = indEmpl + 1
              
         
         femaleEmployeesInSettlement = sum(np.array([person.employee for person in settlement.people if person.gender[-1] == "F"]))
@@ -1151,60 +1134,65 @@ for settlement in reorderedSettlementList[-number_of_xticks:]:
     
         if femaleEmployeesInSettlement > 2 and maleEmployeesInSettlement > 2:
     
-            handle10 = ax4.scatter(counter, wealthFemaleEmployeesArray[indGenderEmpl], color = 'g', marker = 'v', label = "Female employee", s = 50)
-            handle11 = ax4.scatter(counter, wealthMaleEmployeesArray[indGenderEmpl], color = 'b', marker = '^', label = "Male employee", s = 50)
+            handle10 = ax3.scatter(counter, wealthFemaleEmployeesArray[indGenderEmpl], color = 'g', marker = 'v', label = "Female employee", s = 50)
+            handle11 = ax3.scatter(counter, wealthMaleEmployeesArray[indGenderEmpl], color = 'b', marker = '^', label = "Male employee", s = 50)
            
             minimum = min(wealthFemaleEmployeesArray[indGenderEmpl],wealthMaleEmployeesArray[indGenderEmpl])
             maximum = max(wealthFemaleEmployeesArray[indGenderEmpl],wealthMaleEmployeesArray[indGenderEmpl])
-            ax4.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
+            ax3.vlines(counter, minimum, maximum, color='k', linewidth = 0.5, zorder = 0)
             
             indGenderEmpl = indGenderEmpl + 1
         
     counter += 1
     
  
-ax1.set_xlim(-1,number_of_xticks)
-ax2.set_xlim(-1,number_of_xticks)
-ax3.set_xlim(-1,number_of_xticks)
-ax4.set_xlim(-1,number_of_xticks)
+ax1.set_xlim(-2,number_of_xticks)
+ax2.set_xlim(-2,number_of_xticks)
+ax3.set_xlim(-2,number_of_xticks)
+# ax4.set_xlim(-1,number_of_xticks)
 
 settlementsXAxis = [str(settlement.name) + " (" + str(settlement.averageAdultInhabitants) + ")" for settlement in reorderedSettlementList[-number_of_xticks:]]
+NInAggregate = np.sum([settlement.averageAdultInhabitants for settlement in reorderedSettlementList if settlement.averageAdultInhabitants < 100])
+settlementsXAxis = ["Rural aggregate (" + str(NInAggregate) +")"] + settlementsXAxis
 
 ax1.set_xticks([],[])
 ax2.set_xticks([],[])
-ax3.set_xticks([],[])
-ax4.set_xticks(np.arange(0,number_of_xticks), settlementsXAxis, rotation = 90, fontsize = 14)
+# ax3.set_xticks([],[])
+ax3.set_xticks(np.arange(-1,number_of_xticks), settlementsXAxis, rotation = 90, fontsize = 14)
 
 ax1.set_yticks([1/2,8/12,10/12,1,14/12,16/12],["6d","8d","10d","1s","1s2d","1s4d"])
 ax2.set_yticks([1/2,8/12,10/12,1,14/12],["6d","8d","10d","1s","1s2d"])
-ax3.set_yticks([1/2,1,3/2,2,5/2],["6d","1s","1s6d","2s","2s6d"])
-ax4.set_yticks([4/12,1/2,8/12,10/12,1],["4d","6d","8d","10d","1s"])
+# ax3.set_yticks([1/2,1,3/2,2,5/2],["6d","1s","1s6d","2s","2s6d"])
+ax3.set_yticks([4/12,1/2,8/12,10/12,1],["4d","6d","8d","10d","1s"])
 
 ax1.set_ylim(5/12,17/12)
 ax2.set_ylim(5/12,15/12)
-ax3.set_ylim(4/12,31/12)
-ax4.set_ylim(3/12,13/12)
+# ax3.set_ylim(4/12,31/12)
+ax3.set_ylim(3/12,13/12)
 
 ax1.grid(axis = 'y')
 ax2.grid(axis = 'y')
 ax3.grid(axis = 'y')
-ax4.grid(axis = 'y')
+# ax4.grid(axis = 'y')
 
 ax1.set_ylabel("Average tax assessment")
 ax2.set_ylabel("Average tax assessment")
 ax3.set_ylabel("Average tax assessment")
-ax4.set_ylabel("Average tax assessment")
-ax4.set_xlabel("Largest settlements [ascending order]")
+# ax4.set_ylabel("Average tax assessment")
+ax3.set_xlabel("Largest settlements [ascending order]")
 
 
 ax1.legend(handles = [handle1,handle2,handle3], ncols = 3)
 ax2.legend(handles = [handle4,handle6,handle5], ncols = 3)
-ax3.legend(handles = [handle7,handle8,handle9], ncols = 3)
-ax4.legend(handles = [handle10,handle11], ncols = 2)
+# ax3.legend(handles = [handle7,handle8,handle9], ncols = 3)
+ax3.legend(handles = [handle10,handle11], ncols = 2)
 
 plt.savefig("bigplot_characteristics.pdf",bbox_inches = "tight")
 plt.show()
 
+#==============================================================================
+# THE LARGE PLOT OF WEALTH SHARES FOR ALL SETTLEMENTS
+#==============================================================================
 
 plt.rcParams.update({'font.size': 12})
 plt.rcParams.update({"figure.figsize": (10, 4)})
@@ -1309,6 +1297,10 @@ cbar.ax.set_yticklabels(['0','1'])
 # cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
 # fig.colorbar(pcm1, ax=[ax1, ax2], shrink=0.8)
 plt.savefig("bigplot.pdf", bbox_inches = "tight")
+
+#==============================================================================
+# THE THEIL PLOT OF WEALTH DIFFERENCES BETWEEN MEN, WOMEN AND MARRIED PEOPLE
+#==============================================================================
  
 plt.figure(figsize = (10,7))
 
@@ -1326,11 +1318,50 @@ plt.ylabel(r"Theil index $T$ [nats]")
 plt.xlabel(r"Largest settlements [ascending order]")
 plt.grid(axis="y")
 
-plt.xticks(np.arange(len(theilListMarried)), [settlement.name for settlement in reorderedSettlementList[-len(theilListMarried):]], rotation = 90, fontsize = 14)
+xlabels =  [settlement.name + " (" + str(settlement.averageAdultInhabitants) + ")" for settlement in reorderedSettlementList[-len(theilListMarried):]]
+
+plt.xticks(np.arange(len(theilListMarried)), xlabels, rotation = 90, fontsize = 14)
 plt.tight_layout()
 
 plt.legend()
 plt.savefig('theilGender.pdf')
+plt.show()
+
+#==============================================================================
+# THE SANITY WEALTH DIFFERENCE PLOT BETWEEN EMPLOYERS AND EMPLOYEES
+#==============================================================================
+
+xticks = np.arange(len(wealthEmployeesArray))
+
+plt.scatter(xticks, wealthEmployersArray, color = 'r', label = "Employer", s = 50)
+plt.scatter(xticks, wealthEmployeesArray, color = 'g', marker = 'v', label = "Employee", s = 50)
+plt.scatter(xticks, wealthNeitherEmployerEmployeeArray, color = 'b', marker = '^', label = "Neither", s = 50)
+
+# Per-x minimum and maximum across the three series
+stacked = np.vstack([wealthEmployersArray,
+                     wealthEmployeesArray,
+                     wealthNeitherEmployerEmployeeArray])
+minimum = stacked.min(axis=0)
+maximum = stacked.max(axis=0)
+
+plt.vlines(xticks, minimum, maximum, color='k', linewidth=0.5, zorder=0)
+
+xlabels =  [settlement.name + " (" + str(settlement.averageAdultInhabitants) + ")" for settlement in settlementsEmployerEmployee]
+
+plt.xticks(xticks, xlabels, rotation = 90, fontsize = 14)
+plt.yticks([4/12,8/12,12/12,16/12,20/12,24/12,28/12],["4d","8d","1s","1s4d","1s8d","2s","2s4d"])
+
+plt.ylabel("Average tax assessment")
+plt.xlabel("Largest settlements [ascending order]")
+plt.grid(axis="y")
+plt.legend( ncols = 3)
+plt.savefig('EmployerEmployee.pdf', bbox_inches = "tight")
+plt.show()
+
+
+#==============================================================================
+# THE DENSITY PLOTS OF GINI PER COUNTY
+#==============================================================================
 
 listCounties = [settlement.county for settlement in reorderedSettlementList]
 
@@ -1340,13 +1371,9 @@ counties = Counter(listCounties).keys()
 countiesValues = Counter(listCounties).values()
 counties, countiesValues = zip(*sorted(zip(counties,countiesValues)))
 
-# If this is set to True, make the Gini plots for every specific county
 
-# newCountyList = []
 if True:
     counter = 0
-    cdfList = []
-    xList = []
     for county in counties:
         # if len([settlement for settlement in reorderedSettlementList if settlement.county == county]) < 10:
         #     continue
